@@ -1,0 +1,105 @@
+DESIGN
+`timescale 1ns / 1ps
+
+module rom
+# (
+  parameter WIDTH = 8,
+  parameter DEPTH = 16,
+  parameter DEPTH_LOG = $clog2(DEPTH)
+)
+(
+  input  wire                     clk,
+  input  wire [DEPTH_LOG-1:0]     addr_rd,
+  output reg  [WIDTH-1:0]         data_out
+);
+
+  reg [WIDTH-1:0] mem [0:DEPTH-1];
+
+  initial begin
+    // Use only the basename when running in EDA Playground or most online tools
+    // If you run locally from another directory, use an absolute path instead.
+    $readmemh("rom_init.hex", mem, 0, DEPTH-1);
+    // quick verification printed at simulation start
+    $display("After $readmemh: mem[0]=%0h mem[1]=%0h mem[2]=%0h mem[3]=%0h", mem[0], mem[1], mem[2], mem[3]);
+  end
+
+  always @(posedge clk) begin
+    data_out <= mem[addr_rd];
+  end
+
+endmodule
+
+
+
+TESTBENCH
+ `timescale 1ns / 1ps
+
+module tb();
+
+localparam WIDTH     = 8;
+localparam DEPTH     = 16;
+localparam DEPTH_LOG = $clog2(DEPTH);
+
+reg  clk = 0;
+reg  [DEPTH_LOG-1:0] addr_rd;
+wire [WIDTH-1:0]     data_rd;
+
+integer i;
+
+// Instantiate the ROM
+rom #(
+  .WIDTH(WIDTH),
+  .DEPTH(DEPTH)
+) ROMO (
+  .clk(clk),
+  .addr_rd(addr_rd),
+  .data_out(data_rd)
+);
+
+// Clock generation: 1 ns period => toggle every 0.5 ns
+always #0.5 clk = ~clk;
+
+initial begin
+  // optional VCD for waveform viewing in tools that support it
+  $dumpfile("wave.vcd");
+  $dumpvars(0, tb);
+
+  #1;
+  $display("%0t ROM content:", $time);
+
+  // read every address (synchronous read: present address, wait one rising edge)
+  for (i = 0; i < DEPTH; i = i + 1) begin
+    read_data(i[DEPTH_LOG-1:0]);
+  end
+
+  #40;
+  $finish;
+end
+
+// task: apply address and display read value
+task read_data(input [DEPTH_LOG-1:0] address_in);
+begin
+  @(posedge clk);       // wait edge before driving address (synchronous timing)
+  addr_rd = address_in;
+  @(posedge clk);       // wait one clock for data_out to update
+  #0.1;
+  $display("%0t address = %2d, data_rd = %0h", $time, addr_rd, data_rd);
+end
+endtask
+
+endmodule
+
+
+BASH 
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "PWD: $(pwd)"
+echo "Files in cwd:"
+ls -la
+
+# compile
+iverilog -Wall -g2012 design.sv testbench.sv -o a.out
+
+# run
+vvp a.out
